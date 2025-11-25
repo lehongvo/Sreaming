@@ -19,7 +19,7 @@ import (
 	"streaming-orders/internal/orders"
 )
 
-const workerCount = 100
+const workerCount = 1000
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -90,6 +90,7 @@ func run(ctx context.Context) error {
 				}
 
 				log.Printf("[worker-%d] sent order: %+v\n", workerID, event)
+				// print
 			}
 		})
 	}

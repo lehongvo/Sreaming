@@ -10,13 +10,17 @@ import (
 	"syscall"
 
 	"github.com/segmentio/kafka-go"
+	"golang.org/x/sync/errgroup"
 
 	"streaming-orders/internal/config"
 	"streaming-orders/internal/metrics"
 	"streaming-orders/internal/orders"
 )
 
-const metricsAddr = ":2112"
+const (
+	metricsAddr = ":2112"
+	workerCount = 1000
+)
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -32,41 +36,55 @@ func main() {
 func run(ctx context.Context) error {
 	cfg := config.LoadKafka()
 
-	reader := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:  []string{cfg.Broker},
-		Topic:    cfg.Topic,
-		GroupID:  "order-service",
-		MaxBytes: 10e6,
-	})
-	defer reader.Close()
+	g, gctx := errgroup.WithContext(ctx)
 
-	log.Printf("Consumer subscribed to %s, topic=%s\n", cfg.Broker, cfg.Topic)
+	for i := 0; i < workerCount; i++ {
+		workerID := i
+		g.Go(func() error {
+			reader := kafka.NewReader(kafka.ReaderConfig{
+				Brokers:  []string{cfg.Broker},
+				Topic:    cfg.Topic,
+				GroupID:  "order-service",
+				MaxBytes: 10e6,
+			})
+			defer reader.Close()
 
-	for {
-		m, err := reader.ReadMessage(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
-				log.Println("Consumer stopped")
-				return ctx.Err()
+			log.Printf("Consumer worker-%d subscribed to %s, topic=%s\n", workerID, cfg.Broker, cfg.Topic)
+
+			for {
+				m, err := reader.ReadMessage(gctx)
+				if err != nil {
+					if gctx.Err() != nil {
+						log.Printf("Consumer worker-%d stopped\n", workerID)
+						return gctx.Err()
+					}
+					log.Printf("worker-%d read error: %v\n", workerID, err)
+					continue
+				}
+
+				var event orders.Event
+				if err := json.Unmarshal(m.Value, &event); err != nil {
+					log.Printf("worker-%d unmarshal error: %v\n", workerID, err)
+					metrics.RecordFailure("unknown")
+					continue
+				}
+
+				if err := processOrder(event); err != nil {
+					log.Printf("worker-%d process error: %v\n", workerID, err)
+					metrics.RecordFailure(string(event.Type))
+					continue
+				}
+
+				metrics.RecordSuccess(event.Type)
 			}
-			log.Printf("read error: %v\n", err)
-			continue
-		}
-
-		var event orders.Event
-		if err := json.Unmarshal(m.Value, &event); err != nil {
-			log.Printf("unmarshal error: %v\n", err)
-			metrics.RecordFailure("unknown")
-			continue
-		}
-
-		if err := processOrder(event); err != nil {
-			metrics.RecordFailure(string(event.Type))
-			continue
-		}
-
-		metrics.RecordSuccess(event.Type)
+		})
 	}
+
+	if err := g.Wait(); err != nil && err != context.Canceled {
+		return err
+	}
+
+	return ctx.Err()
 }
 
 func processOrder(o orders.Event) error {

@@ -19,7 +19,7 @@ import (
 
 const (
 	metricsAddr = ":2112"
-	workerCount = 1000
+	workerCount = 10
 )
 
 func main() {

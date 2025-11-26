@@ -19,7 +19,7 @@ import (
 	"streaming-orders/internal/orders"
 )
 
-const workerCount = 1000
+const workerCount = 10
 
 func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

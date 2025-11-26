@@ -22,71 +22,140 @@ services:
     ports:
       - "9092:9092"
 
-  producer:
-    image: streaming-orders-app
-    container_name: order-producer
+  webhooks-api:
+    image: ecommerce-platform
+    container_name: webhooks-api
+    build: .
     depends_on:
       - kafka
     environment:
-      - KAFKA_BROKER_ADDR=kafka:9092
-      - KAFKA_ORDER_TOPIC=orders
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=webhooks
+      - HTTP_PORT=8080
+      - SERVICE_NAME=webhooks-api
+    ports:
+      - "8080:8080"
+    command: ["/app/webhooks-api"]
 
-  consumer:
-    image: streaming-orders-app
-    container_name: order-consumer
-    depends_on:
-      - kafka
-    command: ["/app/consumer"]
-    environment:
-      - KAFKA_BROKER_ADDR=kafka:9092
-      - KAFKA_ORDER_TOPIC=orders
-
-  kafka-exporter:
-    image: danielqsj/kafka-exporter:v1.6.0
-    container_name: kafka-exporter
+  webhooks-enrich:
+    image: ecommerce-platform
+    container_name: webhooks-enrich
     depends_on:
       - kafka
     environment:
-      KAFKA_SERVER: kafka:9092
-    ports:
-      - "9308:9308"
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=webhooks
+      - SERVICE_NAME=webhooks-enrich
+    command: ["/app/webhooks-enrich"]
 
-  prometheus:
-    image: prom/prometheus:v2.53.0
-    container_name: prometheus
+  order-service:
+    image: ecommerce-platform
+    container_name: order-service
     depends_on:
-      - kafka-exporter
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "9090:9090"
-
-  grafana:
-    image: grafana/grafana:10.4.2
-    container_name: grafana
-    depends_on:
-      - prometheus
-    ports:
-      - "3000:3000"
+      - kafka
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
-    volumes:
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-
-  nginx:
-    image: nginx:alpine
-    container_name: nginx
-    depends_on:
-      - grafana
-      - prometheus
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=webhooks
+      - HTTP_PORT=8081
+      - SERVICE_NAME=order-service
     ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-    restart: unless-stopped
+      - "8081:8081"
+    command: ["/app/order-service"]
 
+  catalog-service:
+    image: ecommerce-platform
+    container_name: catalog-service
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - KAFKA_TOPIC=webhooks
+      - HTTP_PORT=8082
+      - SERVICE_NAME=catalog-service
+    ports:
+      - "8082:8082"
+    command: ["/app/catalog-service"]
+
+  settings-service:
+    image: ecommerce-platform
+    container_name: settings-service
+    environment:
+      - HTTP_PORT=8083
+      - SERVICE_NAME=settings-service
+    ports:
+      - "8083:8083"
+    command: ["/app/settings-service"]
+
+  report-service:
+    image: ecommerce-platform
+    container_name: report-service
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - HTTP_PORT=8084
+      - SERVICE_NAME=report-service
+    ports:
+      - "8084:8084"
+    command: ["/app/report-service"]
+
+  firefly-connector:
+    image: ecommerce-platform
+    container_name: firefly-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=firefly-connector
+    command: ["/app/firefly-connector"]
+
+  mantis-connector:
+    image: ecommerce-platform
+    container_name: mantis-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=mantis-connector
+    command: ["/app/mantis-connector"]
+
+  ladybug-connector:
+    image: ecommerce-platform
+    container_name: ladybug-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=ladybug-connector
+    command: ["/app/ladybug-connector"]
+
+  hermes-connector:
+    image: ecommerce-platform
+    container_name: hermes-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=hermes-connector
+    command: ["/app/hermes-connector"]
+
+  dragonfly-connector:
+    image: ecommerce-platform
+    container_name: dragonfly-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=dragonfly-connector
+    command: ["/app/dragonfly-connector"]
+
+  locust-connector:
+    image: ecommerce-platform
+    container_name: locust-connector
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKER=kafka:9092
+      - SERVICE_NAME=locust-connector
+    command: ["/app/locust-connector"]
 
